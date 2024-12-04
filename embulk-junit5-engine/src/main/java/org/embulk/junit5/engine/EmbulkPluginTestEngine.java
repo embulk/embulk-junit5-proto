@@ -150,17 +150,21 @@ public final class EmbulkPluginTestEngine extends HierarchicalTestEngine<EmbulkP
 
             for (final Method method : testClass.getDeclaredMethods()) {
                 if (method.isAnnotationPresent(EmbulkPluginTest.class)) {
+                    logger.info(() -> "Test method <" + method + "> is found.");
                     final MethodTestDescriptor methodDescriptor =
                             new MethodTestDescriptor(uniqueId.append("method", method.getName()), testClass, method);
                     classDescriptor.addChild(methodDescriptor);
+                    logger.info(() -> "Test method <" + methodDescriptor + "> is registered.");
                 }
             }
 
             if (!classDescriptor.getChildren().isEmpty()) {
                 engineDescriptor.addChild(classDescriptor);
+                logger.info(() -> "Test class <" + classDescriptor + "> is registered.");
             }
         });
 
+        logger.info(() -> "Test engine <" + engineDescriptor + "> is registered.");
         return engineDescriptor;
     }
 
