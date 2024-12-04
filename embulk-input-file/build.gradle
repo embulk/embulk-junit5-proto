@@ -16,6 +16,26 @@ description = "Loads records from local files."
 configurations {
     compileClasspath.resolutionStrategy.activateDependencyLocking()
     runtimeClasspath.resolutionStrategy.activateDependencyLocking()
+
+    // No need to declare "embulkTestImplementation" explicitly as the sourceSet "embulkTest" is declared below.
+    // No need to declare "embulkTestRuntime" explicitly as the sourceSet "embulkTest" is declared below.
+    //
+    // "embulkTestImplementation" should not ".extendsFrom testImplementation"
+    // so that it won't include main and test in the top-level class loader.
+    //
+    // "embulkTestRuntime" should not ".extendsFrom testRuntime" similarly.
+}
+
+sourceSets {
+    embulkTest {
+        java {
+            srcDir file("src/embulkTest/java")
+        }
+        resources.srcDir file("src/embulkTest/resources")
+
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
 }
 
 tasks.withType(JavaCompile) {
@@ -51,6 +71,28 @@ dependencies {
     testImplementation "org.embulk:embulk-core:0.10.50"
     testImplementation "org.embulk:embulk-deps:0.10.50"
     testImplementation "org.embulk:embulk-junit4:0.10.50"
+
+    embulkTestImplementation project(":embulk-junit5-api")  // TODO: embulk-junit5-api depends on junit-jupiter-api transitively?
+    embulkTestImplementation "org.junit.jupiter:junit-jupiter-api:5.11.0"
+
+    embulkTestImplementation "org.embulk:embulk-util-config:0.5.0"
+    embulkTestImplementation "javax.validation:validation-api:2.0.1.Final"
+    embulkTestImplementation platform("com.fasterxml.jackson:jackson-bom:2.16.2")
+    embulkTestImplementation "com.fasterxml.jackson.core:jackson-annotations"
+    embulkTestImplementation "com.fasterxml.jackson.core:jackson-core"
+    embulkTestImplementation "com.fasterxml.jackson.core:jackson-databind"
+    embulkTestImplementation "com.fasterxml.jackson.datatype:jackson-datatype-jdk8"
+    embulkTestImplementation "org.embulk:embulk-util-file:0.2.0"
+
+    embulkTestRuntimeOnly project(":embulk-junit5-engine")
+
+    // embulk-core can be loaded in the top-level class loader.
+    embulkTestRuntimeOnly "org.embulk:embulk-core:0.11.5"
+
+    // To access the Embulk core classes from the tests.
+    embulkTestCompileOnly "org.embulk:embulk-core:0.11.5"
+
+    // TODO: Confirm just 'embulkTestImplementation "org.embulk:embulk-core:0.11.5"' may be better?
 }
 
 embulkPlugin {
@@ -180,6 +222,58 @@ signing {
 test {
     testLogging {
         events "passed", "skipped", "failed", "standardOut", "standardError"
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showCauses = true
+        showExceptions = true
+        showStackTraces = true
+        showStandardStreams = true
+        outputs.upToDateWhen { false }
+    }
+}
+
+task embulkTest(type: Test, dependsOn: ":assemble") {
+    doFirst {
+        println "^^^^^ Classpath information in main ^^^^^"
+        println sourceSets.main.runtimeClasspath
+        println sourceSets.main.runtimeClasspathConfigurationName
+        sourceSets.main.runtimeClasspath.each {
+            println it
+        }
+        println "^^^^^ Classpath information in embulkTest ^^^^^"
+        println sourceSets.embulkTest.runtimeClasspath
+        println sourceSets.embulkTest.runtimeClasspathConfigurationName
+        sourceSets.embulkTest.runtimeClasspath.each {
+            println it
+        }
+        println "^^^^^ Classpath information done ^^^^^"
+    }
+
+    useJUnitPlatform()
+
+    // TODO See the following Gradle implementations to investigate Gradle classpath configurations.
+    //
+    // JavaPlugin.createDefaultTestSuite
+    // https://github.com/gradle/gradle/blob/v8.10.1/platforms/jvm/plugins-java/src/main/java/org/gradle/api/plugins/JavaPlugin.java#L354-L383
+    //
+    // SourceSet.getRuntimeClasspathConfigurationName
+    // https://github.com/gradle/gradle/blob/v8.10.1/platforms/jvm/platform-jvm/src/main/java/org/gradle/api/internal/tasks/DefaultSourceSet.java#L194-L197
+    //
+    // SourceSet.getRuntimeClasspath
+    // https://github.com/gradle/gradle/blob/v8.10.1/platforms/jvm/platform-jvm/src/main/java/org/gradle/api/internal/tasks/DefaultSourceSet.java#L239-L242
+    classpath = sourceSets.embulkTest.runtimeClasspath
+
+    // Pick up "@EmbulkPluginTest" methods from the classes in "testClassesDirs"
+    testClassesDirs = sourceSets.embulkTest.output.classesDirs
+
+    afterEvaluate { project ->
+        systemProperty "org.embulk.junit5.plugin.class.path",
+                       joinPluginClasspath(sourceSets.embulkTest.output.classesDirs,
+                                           sourceSets.embulkTest.output.resourcesDir,
+                                           sourceSets.main.runtimeClasspath)
+    }
+
+    testLogging {
+        events "started", "passed", "skipped", "failed", "standardOut", "standardError"
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         showCauses = true
         showExceptions = true
